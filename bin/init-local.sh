@@ -7,5 +7,5 @@ fi
 source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
-export PYTHONPATH=$PYTHONPATH:${PWD}/src
+export PYTHONPATH=${PWD}/src:$PYTHONPATH
 
