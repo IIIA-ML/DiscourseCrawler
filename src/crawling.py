@@ -93,13 +93,14 @@ class DiscourseCrawler:
                 logging.debug("URL:"+str(url))
                 resp = self.browser.get(url)
                 json_page = json.loads(resp.content)
-                # print(json_page)
+                #print(len(resp.content))
+                #raise Expception("kk")
                 topic_list = json_page["topic_list"]
                 more_topics_url = topic_list["more_topics_url"] if "more_topics_url" in topic_list else None
                 p = Page(category_id=c.id,
                          page_id=next_page_id,
                          more_topics_url=more_topics_url,
-                         json=resp.content)
+                         json=json.dumps(json_page))
                 self.session.add(p)
                 this_page_topics = []
                 for topic in topic_list["topics"]:
