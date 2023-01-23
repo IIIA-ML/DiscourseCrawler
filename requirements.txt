@@ -3,3 +3,6 @@ jupyter
 urlpath
 ratelimiter
 SQLAlchemy==2.0.0rc2
+pandas==1.5.3
+networkx==3.0
+matplotlib==3.6.3
