@@ -49,7 +49,7 @@ class DiscourseCrawler:
         self.session.commit()
 
         # Prepare for crawling
-        rate_limiter = RateLimiter(max_calls=3, period=1, callback=limited)
+        rate_limiter = RateLimiter(max_calls=10, period=1, callback=limited)
         self.browser = RLBrowser(rate_limiter)
 
         self.crawl_forum(forum)
@@ -69,6 +69,10 @@ class DiscourseCrawler:
             logging.info("Categories committed to db")
         for c in f.categories:
             self.crawl_category(c)
+        query = select(Topic)
+        topics = self.session.execute(query).all()
+        for t in topics:
+            self.crawl_topic(t)  
         logging.info("Finished crawling forum "+f.url)
 
     def crawl_category(self, c: Category):
@@ -110,8 +114,8 @@ class DiscourseCrawler:
                 self.session.commit()
                 logging.info("Page "+str(next_page_id)+" and their topics committed to db")
                 logging.info("Started crawling the topics in this page")
-                for t in this_page_topics:
-                    self.crawl_topic(t)
+                #for t in this_page_topics:
+                #    self.crawl_topic(t)
                 last_page = p
             c.pages_crawled = True
             self.session.commit()
