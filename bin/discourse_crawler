@@ -5,6 +5,8 @@ import logging
 import os
 import time
 
+from crawling import DiscourseCrawler
+
 parser = argparse.ArgumentParser(
                     prog = 'discourse_crawler',
                     description = 'Crawls all of the information in a discourse instance')\
@@ -22,10 +24,9 @@ args = parser.parse_args()
 
 if args.remove_db:
     os.remove(args.db)
-
-from crawling import DiscourseCrawler
 c = DiscourseCrawler(args.url, "sqlite:///"+args.db)
-c.create_db()
+if args.remove_db:
+    c.create_db()
 start_time = time.time()
 logging.info("Started crawling at "+str(start_time))
 c.crawl(echo=False)

@@ -1,6 +1,7 @@
 import logging
 import json
 import time
+import sys
 
 import mechanicalsoup as ms
 from ratelimiter import RateLimiter
@@ -9,6 +10,9 @@ from urlpath import URL
 from sqlalchemy import select
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+def find_topic_query(category_id, topic_id):
+    return select(Topic.id).where(Topic.category_id ==category_id).where(Topic.topic_id == topic_id)
 
 class RLBrowser(ms.StatefulBrowser):
     def __init__(self, rl: RateLimiter, *args, **kwargs):
@@ -42,21 +46,29 @@ class DiscourseCrawler:
         engine = create_engine(self.db, echo=echo, future=True)
         session_class = sessionmaker(bind=engine)
         self.session = session_class()
-
-        # Add the forum we are going to crawl to the database
-        forum = Forum(url=self.url)
-        self.session.add(forum)
-        self.session.commit()
-
+        
         # Prepare for crawling
         rate_limiter = RateLimiter(max_calls=10, period=1, callback=limited)
         self.browser = RLBrowser(rate_limiter)
-
+        forum = self.get_forum()
         self.crawl_forum(forum)
+        
+    def get_forum(self):
+        # Check if the forum we are going to crawl is in the database
+        stmt = select(Forum).where(Forum.url == self.url)
+        forum = self.session.scalars(stmt).first()
+        print(forum)
+        if forum is None:
+            sys.exit()
+            forum = Forum(url=self.url)
+            self.session.add(forum)
+            self.session.commit()
+        return forum
 
     def crawl_forum(self, f: Forum):
         logging.info("Started crawling forum"+f.url)
         if not f.categories_crawled:
+            sys.exit()
             resp = self.browser.get(URL(f.url) / "categories.json")
             category_list = json.loads(resp.content)["category_list"]
             logging.info("Categories: "+str(category_list.keys()))
@@ -67,17 +79,21 @@ class DiscourseCrawler:
             f.categories_crawled = True
             self.session.commit()
             logging.info("Categories committed to db")
-        for c in f.categories:
-            self.crawl_category(c)
-        query = select(Topic)
-        topics = self.session.execute(query).all()
-        for t in topics:
-            self.crawl_topic(t)  
+        else: 
+            logging.info("Skipping obtaining the categories of the forum")
+        
+        self.crawl_categories(f)
+        self.crawl_topics(f)
         logging.info("Finished crawling forum "+f.url)
 
+    def crawl_categories(self,f: Forum):
+        for c in f.categories:
+            self.crawl_category(c)
+            
     def crawl_category(self, c: Category):
         logging.info("Crawling category "+str(c.category_id))
         if not c.pages_crawled:
+            sys.exit()
             query = select(Page) \
                 .where(Page.category_id == c.id) \
                 .order_by(Page.page_id.desc())
@@ -106,11 +122,12 @@ class DiscourseCrawler:
                          more_topics_url=more_topics_url,
                          json=json.dumps(json_page))
                 self.session.add(p)
-                this_page_topics = []
+                #this_page_topics = []
                 for topic in topic_list["topics"]:
-                    t = Topic(topic_id=topic["id"], category_id=c.id, page_excerpt_json=json.dumps(topic))
-                    this_page_topics.append(t)
-                    self.session.add(t)
+                    if self.session.execute(find_topic_query(c.id, topic["id"])).first() is None:
+                        t = Topic(topic_id=topic["id"], category_id=c.id, page_excerpt_json=json.dumps(topic))
+                        #this_page_topics.append(t)           
+                        self.session.add(t)
                 self.session.commit()
                 logging.info("Page "+str(next_page_id)+" and their topics committed to db")
                 logging.info("Started crawling the topics in this page")
@@ -121,8 +138,14 @@ class DiscourseCrawler:
             self.session.commit()
             logging.info("Finished crawling category "+str(c.category_id))
         else:
-            logging.info("Category has already been crawled")
+            logging.info("Category "+str(c.category_id)+" has already been crawled")
 
+    def crawl_topics(self, f: Forum):
+        query = select(Topic).join(Topic.category).join(Category.forum).where(Forum.id==f.id)
+        topics = self.session.scalars(query)
+        for t in topics:
+            self.crawl_topic(t)  
+            
     def crawl_topic(self, t: Topic):
         logging.info("Crawling topic "+str(t.topic_id))
         if not t.posts_crawled:
@@ -145,6 +168,9 @@ class DiscourseCrawler:
                 remaining_posts = remaining_posts[n_posts:]
             t.posts_crawled = True
             self.session.commit()
+            logging.info("Finished crawling topic "+str(t.topic_id))
+        else:
+            logging.info("Topic "+str(t.topic_id)+" has already been crawled")
 
     def create_posts(self, t: Topic, json_posts):
         logging.debug(json_posts)
